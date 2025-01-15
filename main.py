@@ -3,96 +3,69 @@ def tokenize(text):
     return [word.lower() for word in text.split()]
 
 
-def calculate_corpus_model(documents):
-    """Oblicza model języka dla całego korpusu."""
-    word_counts = {}
-    total_words = 0
+def calculate_models(documents):
+    """Oblicza modele dla dokumentów i korpusu."""
+    # Inicjalizacja liczników
+    doc_models = []
+    corpus_counts = {}
+    corpus_total = 0
 
-    # Zlicz wszystkie słowa w korpusie
+    # Oblicz model dla każdego dokumentu i zbierz statystyki korpusu
     for doc in documents:
         tokens = tokenize(doc)
-        total_words += len(tokens)
+        doc_counts = {}
+        doc_len = len(tokens)
+
         for token in tokens:
-            word_counts[token] = word_counts.get(token, 0) + 1
+            doc_counts[token] = doc_counts.get(token, 0) + 1
+            corpus_counts[token] = corpus_counts.get(token, 0) + 1
+            corpus_total += 1
 
-    # Oblicz prawdopodobieństwa w korpusie
-    corpus_probs = {}
-    if total_words > 0:
-        for word, count in word_counts.items():
-            corpus_probs[word] = count / total_words
+        doc_models.append((doc_counts, doc_len))
 
-    return corpus_probs
+    return doc_models, corpus_counts, corpus_total
 
 
-def calculate_document_model(document):
-    """Oblicza model języka dla pojedynczego dokumentu."""
-    tokens = tokenize(document)
-    word_counts = {}
-    total_words = len(tokens)
-
-    # Zlicz słowa w dokumencie
-    for token in tokens:
-        word_counts[token] = word_counts.get(token, 0) + 1
-
-    # Oblicz prawdopodobieństwa w dokumencie
-    doc_probs = {}
-    if total_words > 0:
-        for word, count in word_counts.items():
-            doc_probs[word] = count / total_words
-
-    return doc_probs
-
-
-def calculate_query_likelihood(doc_model, corpus_model, query_terms, lambda_param=0.5):
-    """Oblicza prawdopodobieństwo wygenerowania zapytania przez model dokumentu."""
-    log_prob = 0
+def calculate_score(doc_model, doc_len, corpus_counts, corpus_total, query_terms, lambda_param=0.5):
+    """Oblicza prawdopodobieństwo wygenerowania zapytania przez dokument."""
+    score = 0
 
     for term in query_terms:
-        # Prawdopodobieństwo w dokumencie
-        doc_prob = doc_model.get(term, 0)
-        # Prawdopodobieństwo w korpusie
-        corpus_prob = corpus_model.get(term, 0)
+        # P(t|Md) - prawdopodobieństwo termu w dokumencie
+        doc_prob = doc_model.get(term, 0) / doc_len if doc_len > 0 else 0
+
+        # P(t|Mc) - prawdopodobieństwo termu w korpusie
+        corpus_prob = corpus_counts.get(term, 0) / corpus_total if corpus_total > 0 else 0
+
         # Wygładzanie Jelineka-Mercera
         smoothed_prob = lambda_param * doc_prob + (1 - lambda_param) * corpus_prob
 
+        # Dodaj do sumy logarytmicznej
         if smoothed_prob > 0:
-            log_prob += smoothed_prob
+            score += smoothed_prob * doc_model.get(term, 0)
 
-    return log_prob
-
-
-def rank_documents(documents, query):
-    """Szereguje dokumenty według prawdopodobieństwa wygenerowania zapytania."""
-    # Oblicz model korpusu
-    corpus_model = calculate_corpus_model(documents)
-    query_terms = tokenize(query)
-    doc_scores = []
-
-    # Oblicz score dla każdego dokumentu
-    for idx, doc in enumerate(documents):
-        doc_model = calculate_document_model(doc)
-        score = calculate_query_likelihood(doc_model, corpus_model, query_terms)
-        doc_scores.append((idx, score))
-
-    # Sortuj malejąco według score, przy równości zachowaj kolejność dokumentów
-    ranked_docs = sorted(doc_scores, key=lambda x: (-x[1], x[0]))
-    return [idx for idx, _ in ranked_docs]
+    return score
 
 
 def main():
-    # Wczytaj liczbę dokumentów
-    n = int(input())
+    # Wczytaj dane wejściowe
+    n = int(input().strip())
+    documents = [input().strip() for _ in range(n)]
+    query = input().strip()
 
-    # Wczytaj dokumenty
-    documents = []
-    for _ in range(n):
-        documents.append(input())
+    # Przygotuj modele
+    doc_models, corpus_counts, corpus_total = calculate_models(documents)
+    query_terms = tokenize(query)
 
-    # Wczytaj zapytanie
-    query = input()
+    # Oblicz score dla każdego dokumentu
+    scores = []
+    for idx, (doc_model, doc_len) in enumerate(doc_models):
+        score = calculate_score(doc_model, doc_len, corpus_counts, corpus_total, query_terms)
+        scores.append((score, -idx))  # -idx dla zachowania stabilnego sortowania
 
-    # Oblicz ranking
-    result = rank_documents(documents, query)
+    # Posortuj i przygotuj wynik
+    # Sortujemy malejąco po score i rosnąco po indeksie (dlatego -idx)
+    result = [-i for _, i in sorted(scores, reverse=True)]
 
     # Wyświetl wynik
     print(f"[{', '.join(map(str, result))}]")
